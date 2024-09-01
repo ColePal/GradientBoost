@@ -1,5 +1,9 @@
 from typing import Any
 import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.metrics import mean_squared_error
 class GBoost:
     def __init__(self, boosts, learning_rate):
         self.boosts = boosts
@@ -82,3 +86,65 @@ class GBoost:
         return y_pred
     def get_classifier(self):
         return self.classifier
+
+class GBoostMod(GBoost):
+    def __init__(self, boosts, learning_rate, weak_learner_type):
+        GBoost.__init__(self,boosts,learning_rate)
+        self.weak_learner_type = weak_learner_type
+    def fit(self,X,y,monitor):
+        if len(X) != len(y):
+            raise Exception("Please ensure X and y are the same length")
+        def initialize_predictions(y):
+            return np.mean(y)
+        def compute_residuals(y, y_pred):
+            return y - y_pred
+        def train_weak_learner(X, residuals, weak_learner_type):
+            match weak_learner_type:
+                case "nearest_neighbours_1":
+                    model = KNeighborsRegressor(n_neighbors=1)
+                case "nearest_neighbours_2":
+                    model = KNeighborsRegressor(n_neighbors=2)
+                case "nearest_neighbours_3":
+                    model = KNeighborsRegressor(n_neighbors=3)
+                case "nearest_neighbours_4":
+                    model = KNeighborsRegressor(n_neighbors=4)
+                case "tree_depth_2":
+                    model = DecisionTreeRegressor(max_depth=2,max_features=1)
+                case "tree_depth_3":
+                    model = DecisionTreeRegressor(max_depth=3,max_features=1)
+                case "tree_depth_4":
+                    model = DecisionTreeRegressor(max_depth=4,max_features=1)
+                case "neural_network":
+                    model = MLPRegressor(max_iter=100)
+                case _:
+                    print(f"Did not recognise {weak_learner_type}. Using Decision Stump")
+                    model = DecisionTreeRegressor(max_depth=1,max_features=1)
+            model.fit(X,residuals)
+            return model
+        def update_predictions(y_pred, learning_rate, model, X):
+            predictions = model.predict(X)
+            new_prediction = y_pred + learning_rate * predictions
+            mse = mean_squared_error(residuals, predictions)
+            return new_prediction, mse
+        
+        self.initial_pred = initialize_predictions(y)
+        current_pred = np.full(len(y),self.initial_pred)
+        error = []
+        weak_learners = []
+        for t in range(self.boosts):
+            residuals = compute_residuals(y,current_pred)# get residuals from the current predictions
+            model = train_weak_learner(X, residuals, self.weak_learner_type)# train the next weak learner on the features and residuals 
+            current_pred, best_mse = update_predictions(current_pred, self.learning_rate, model, X)# update the predictions to incorporate the latest weak learner
+            weak_learners.append(model)
+            error.append(best_mse)
+        self.classifier = weak_learners
+    def predict(self, X):
+        def update_predictions(y_pred, learning_rate, model, X):
+            predictions = model.predict(X)
+            new_prediction = y_pred + learning_rate * predictions
+            return new_prediction
+        current_pred = np.full(len(X), self.initial_pred)
+        for model in self.classifier:
+            current_pred = update_predictions(current_pred, self.learning_rate, model, X)
+        y_pred = current_pred
+        return y_pred
