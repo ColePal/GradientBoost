@@ -23,7 +23,6 @@ class GBoost:
                 thresholds = np.unique(X[:, feature_index])
                 for threshold in thresholds:
                     left_mask = X[:, feature_index] <= threshold
-                    #right_mask = X[:, feature_index] > threshold
                     right_mask = ~left_mask
                     left_count = np.sum(left_mask)
                     right_count = n_samples - left_count
@@ -93,10 +92,12 @@ class GBoostMod(GBoost):
     def __init__(self, boosts, learning_rate, weak_learner_type="tree_depth_1"):
         GBoost.__init__(self,boosts,learning_rate)
         self.weak_learner_type = weak_learner_type
-    def fit(self,X,y,monitor):
+    def fit(self,X,y,monitor=False, validation_split_percentage=0.0, seed=1):
         if len(X) != len(y):
             raise Exception("Please ensure X and y are the same length")
-        
+        if validation_split_percentage > 0:
+            X, validation_X, y, validation_y = train_test_split(X,y,test_size = validation_split_percentage, random_state = seed)
+
         def initialize_predictions(y):
             return np.mean(y)
         def compute_residuals(y, y_pred):
@@ -146,6 +147,8 @@ class GBoostMod(GBoost):
         self.classifier = weak_learners
         if not recognised:
             print(f"Did not recognise {self.weak_learner_type}. Using Decision Stump")
+        if validation_split_percentage > 0:
+            print(f"Validation MSE score: {mean_squared_error(validation_y, self.predict(validation_X))}")
     def predict(self, X):
         def update_predictions(y_pred, learning_rate, model, X):
             predictions = model.predict(X)
