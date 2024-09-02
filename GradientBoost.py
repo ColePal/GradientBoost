@@ -10,17 +10,20 @@ class GBoost:
     def __init__(self, boosts, learning_rate=0.1):
         self.boosts = boosts
         self.learning_rate = learning_rate
-    def fit(self, X, y, monitor=False, validation_split_percentage=0.1, seed=1, limit=20):
+    def fit(self, X, y, monitor=False, validation_split_percentage=0.1, seed=1, limit=20, loss_function_name="mse"):
         if len(X) != len(y):
             raise Exception("Please ensure X and y are the same length")
         if validation_split_percentage > 0:
             X, validation_X, y, validation_y = train_test_split(X,y,test_size = validation_split_percentage, random_state = seed)
         if validation_split_percentage == 0 and limit > 0:
             raise Exception("Please ensure validation split is greater than 0 when assigning limit")
-        def find_best_split(X, y):
+        def find_best_split(X, y, loss_function_name):
             X = np.array(X)  # Ensure X is a NumPy array
             n_samples, n_features = X.shape
+
             best_mse = float('inf')
+            best_loss_function = float('inf') 
+
             best_feature_index,best_threshold,best_left_value,best_right_value = None,None,None,None
             for feature_index in range(n_features):
                 thresholds = np.unique(X[:, feature_index])
@@ -34,23 +37,44 @@ class GBoost:
                         continue
                     left_value = np.mean(y[left_mask])
                     right_value = np.mean(y[right_mask])
-                    mse = (
-                        np.mean((y[left_mask] - left_value) ** 2) * left_count +
-                        np.mean((y[right_mask] - right_value) ** 2) * right_count
-                    ) / n_samples
-                    if mse < best_mse:
-                        best_mse = mse
+
+                    predicted = np.concatenate((np.full((left_count), left_value) , np.full((right_count), right_value)))
+                    errors = y - predicted
+                    
+                    
+
+                    match loss_function_name:
+                        case "mse":
+                            errors2 = np.square(errors)
+                            mse = np.mean(errors2)
+                            loss_function = mse
+                        case "rmse":
+                            errors2 = np.square(errors)
+                            mse = np.mean(errors2)
+                            rmse = np.sqrt(mse)
+                            loss_function = rmse
+                        case "mae":
+                            abs_error = np.abs(errors)
+                            mae = np.mean(abs_error)
+                            loss_function = mae
+                        case "mape":
+                            abs_error_over_actual = np.abs(errors/y)
+                            mape = np.mean(abs_error_over_actual) * 100
+                            loss_function = mape
+                    
+                    if loss_function < best_loss_function:
+                        best_loss_function = loss_function
                         best_feature_index = feature_index
                         best_threshold = threshold
                         best_left_value = left_value
                         best_right_value = right_value
-            return best_feature_index, best_threshold, best_left_value, best_right_value, best_mse
+            return best_feature_index, best_threshold, best_left_value, best_right_value, best_loss_function
         def initialize_predictions(y):
             return np.mean(y)
         def compute_residuals(y, y_pred):
             return y - y_pred
-        def train_weak_learner(X, residuals):
-            return find_best_split(X, residuals)
+        def train_weak_learner(X, residuals, loss_function_name):
+            return find_best_split(X, residuals, loss_function_name)
         def predict_with_stump(X, feature_index, threshold, left_value, right_value):
             return np.where(X[:, feature_index] <= threshold, left_value, right_value)
 
@@ -73,7 +97,7 @@ class GBoost:
                     print("Early stopping")
                     return
             residuals = compute_residuals(y,current_pred)# get residuals from the current predictions
-            stump = train_weak_learner(X, residuals)# train the next weak learner on the features and residuals
+            stump = train_weak_learner(X, residuals, loss_function_name)# train the next weak learner on the features and residuals
             current_pred = update_predictions(current_pred, stump[0], stump[1], stump[2], stump[3], X, self.learning_rate)# update the predictions to incorporate the latest weak learner
             stumps.append(stump)
             error.append(stump[4])
