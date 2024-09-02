@@ -10,11 +10,13 @@ class GBoost:
     def __init__(self, boosts, learning_rate=0.1):
         self.boosts = boosts
         self.learning_rate = learning_rate
-    def fit(self, X, y, monitor=False, validation_split_percentage=0.0, seed=1):
+    def fit(self, X, y, monitor=False, validation_split_percentage=0.1, seed=1, limit=20):
         if len(X) != len(y):
             raise Exception("Please ensure X and y are the same length")
         if validation_split_percentage > 0:
             X, validation_X, y, validation_y = train_test_split(X,y,test_size = validation_split_percentage, random_state = seed)
+        if validation_split_percentage == 0 and limit > 0:
+            raise Exception("Please ensure validation split is greater than 0 when assigning limit")
         def find_best_split(X, y):
             X = np.array(X)  # Ensure X is a NumPy array
             n_samples, n_features = X.shape
@@ -61,13 +63,29 @@ class GBoost:
         current_pred = np.full(len(y),self.initial_pred)
         error = []
         stumps = []
+        best_mse = float('inf')
+        tracker = 0
+        best_classifier = None
         for t in range(self.boosts):
+            if validation_split_percentage > 0:
+                if tracker >= limit:
+                    self.classifier=best_classifier
+                    print("Early stopping")
+                    return
             residuals = compute_residuals(y,current_pred)# get residuals from the current predictions
             stump = train_weak_learner(X, residuals)# train the next weak learner on the features and residuals
             current_pred = update_predictions(current_pred, stump[0], stump[1], stump[2], stump[3], X, self.learning_rate)# update the predictions to incorporate the latest weak learner
             stumps.append(stump)
             error.append(stump[4])
-        self.classifier = stumps
+            self.classifier = stumps
+            if validation_split_percentage > 0:
+                current_mse = mean_squared_error(validation_y, self.predict(validation_X))
+                tracker += 1
+                if current_mse < best_mse:
+                    tracker = 0
+                    best_mse = current_mse
+                    best_classifier = stumps.copy()
+                    #print(f"New target: {best_mse}")
         if validation_split_percentage > 0:
             print(f"Validation MSE score: {mean_squared_error(validation_y, self.predict(validation_X))}")
     def predict(self, X):
@@ -94,7 +112,7 @@ class GBoostMod(GBoost):
     def __init__(self, boosts, learning_rate, weak_learner_type="tree_depth_1"):
         GBoost.__init__(self,boosts,learning_rate)
         self.weak_learner_type = weak_learner_type
-    def fit(self,X,y,monitor=False, validation_split_percentage=0.0, seed=1):
+    def fit(self,X,y,monitor=False, validation_split_percentage=0.1, seed=1, limit=10):
         if len(X) != len(y):
             raise Exception("Please ensure X and y are the same length")
         if validation_split_percentage > 0:
@@ -142,14 +160,27 @@ class GBoostMod(GBoost):
         current_pred = np.full(len(y),self.initial_pred)
         error = []
         weak_learners = []
+        best_validation_mse = float('inf')
+        tracker = 0
         for t in range(self.boosts):
+            if tracker >= limit:
+                self.classifier=best_classifier
+                print("Early stopping")
+                return
             residuals = compute_residuals(y,current_pred)# get residuals from the current predictions
 
             model, recognised = train_weak_learner(X, residuals)# train the next weak learner on the features and residuals 
             current_pred, best_mse = update_predictions(current_pred, model, X)# update the predictions to incorporate the latest weak learner
             weak_learners.append(model)
             error.append(best_mse)
-        self.classifier = weak_learners
+            self.classifier = weak_learners
+            current_mse = mean_squared_error(validation_y, self.predict(validation_X))
+            tracker += 1
+            if current_mse < best_validation_mse:
+                tracker = 0
+                best_validation_mse = current_mse
+                best_classifier = weak_learners.copy()
+                #print(f"New target: {best_mse}")
         if not recognised:
             print(f"Did not recognise {self.weak_learner_type}. Using Decision Stump")
         if validation_split_percentage > 0:
