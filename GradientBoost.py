@@ -5,6 +5,7 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
+
 class GBoost:
     def __init__(self, boosts, learning_rate=0.1):
         self.boosts = boosts
@@ -89,6 +90,7 @@ class GBoost:
         return self.classifier
 
 class GBoostMod(GBoost):
+
     def __init__(self, boosts, learning_rate, weak_learner_type="tree_depth_1"):
         GBoost.__init__(self,boosts,learning_rate)
         self.weak_learner_type = weak_learner_type
@@ -97,11 +99,11 @@ class GBoostMod(GBoost):
             raise Exception("Please ensure X and y are the same length")
         if validation_split_percentage > 0:
             X, validation_X, y, validation_y = train_test_split(X,y,test_size = validation_split_percentage, random_state = seed)
-
         def initialize_predictions(y):
             return np.mean(y)
         def compute_residuals(y, y_pred):
             return y - y_pred
+
         def train_weak_learner(X, residuals):
             recognised = True
             match self.weak_learner_type:
@@ -113,6 +115,7 @@ class GBoostMod(GBoost):
                     model = KNeighborsRegressor(n_neighbors=3)
                 case "nearest_neighbours_4":
                     model = KNeighborsRegressor(n_neighbors=4)
+
                 case "tree_depth_1":
                     model = DecisionTreeRegressor(max_depth=1,max_features=1)
                 case "tree_depth_2":
@@ -124,6 +127,7 @@ class GBoostMod(GBoost):
                 case "neural_network":
                     model = MLPRegressor(max_iter=100)
                 case _:
+
                     recognised = False
                     model = DecisionTreeRegressor(max_depth=1,max_features=1)
             model.fit(X,residuals)
@@ -140,6 +144,7 @@ class GBoostMod(GBoost):
         weak_learners = []
         for t in range(self.boosts):
             residuals = compute_residuals(y,current_pred)# get residuals from the current predictions
+
             model, recognised = train_weak_learner(X, residuals)# train the next weak learner on the features and residuals 
             current_pred, best_mse = update_predictions(current_pred, model, X)# update the predictions to incorporate the latest weak learner
             weak_learners.append(model)
