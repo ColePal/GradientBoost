@@ -10,7 +10,7 @@ class GBoost:
     def __init__(self, boosts, learning_rate=0.1):
         self.boosts = boosts
         self.learning_rate = learning_rate
-    def fit(self, X, y, monitor=False, validation_split_percentage=0.1, seed=1, limit=20, loss_function_name="mse"):
+    def fit(self, X, y, monitor=False, validation_split_percentage=0.1, seed=1, limit=10, loss_function_name="mse", learning_schedule_name="None"):
         if len(X) != len(y):
             raise Exception("Please ensure X and y are the same length")
         if validation_split_percentage > 0:
@@ -40,8 +40,6 @@ class GBoost:
 
                     predicted = np.concatenate((np.full((left_count), left_value) , np.full((right_count), right_value)))
                     errors = y - predicted
-                    
-                    
 
                     match loss_function_name:
                         case "mse":
@@ -96,9 +94,16 @@ class GBoost:
                     self.classifier=best_classifier
                     print("Early stopping")
                     return
+            match learning_schedule_name:
+                case "None":
+                    learning_rate = self.learning_rate
+                case "Log":
+                    learning_rate = self.learning_rate * np.log((self.boosts-t)/(t+1))
+                case "Linear":
+                    learning_rate = self.learning_rate * (t+1)/self.boosts
             residuals = compute_residuals(y,current_pred)# get residuals from the current predictions
             stump = train_weak_learner(X, residuals, loss_function_name)# train the next weak learner on the features and residuals
-            current_pred = update_predictions(current_pred, stump[0], stump[1], stump[2], stump[3], X, self.learning_rate)# update the predictions to incorporate the latest weak learner
+            current_pred = update_predictions(current_pred, stump[0], stump[1], stump[2], stump[3], X, learning_rate)# update the predictions to incorporate the latest weak learner
             stumps.append(stump)
             error.append(stump[4])
             self.classifier = stumps
@@ -109,7 +114,6 @@ class GBoost:
                     tracker = 0
                     best_mse = current_mse
                     best_classifier = stumps.copy()
-                    #print(f"New target: {best_mse}")
         if validation_split_percentage > 0:
             print(f"Validation MSE score: {mean_squared_error(validation_y, self.predict(validation_X))}")
     def predict(self, X):
